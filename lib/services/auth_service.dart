@@ -7,6 +7,7 @@ import '../models/permission.dart';
 import '../models/auth_response.dart';
 import '../utils/constants.dart';
 import 'api_service.dart';
+import 'rbac_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -128,11 +129,11 @@ class AuthService {
           id: 1,
           title: 'User',
           permissions: [
-            Permission(id: 1, title: 'dashboard_access'),
-            Permission(id: 2, title: 'view_transactions'),
-            Permission(id: 3, title: 'view_cards'),
-            Permission(id: 4, title: 'view_statistics'),
-            Permission(id: 5, title: 'create_transaction'),
+            Permission(id: 1, title: 'home_view'),
+            Permission(id: 2, title: 'cards_view'),
+            Permission(id: 3, title: 'cards_show'),
+            Permission(id: 4, title: 'cards_edit'),
+            Permission(id: 5, title: 'cards_create'),
           ],
         ),
       ],
@@ -282,4 +283,55 @@ class AuthService {
 
   /// Check if email is verified
   bool get isEmailVerified => _currentUser?.isEmailVerified ?? false;
+
+  /// Fetch role details by ID with permissions
+  /// Example: http://127.0.0.1:8000/api/v1/roles/1
+  Future<Role?> getRoleById(int roleId) async {
+    return await RbacService().getRoleById(roleId);
+  }
+
+  /// Fetch all roles
+  Future<List<Role>> getAllRoles() async {
+    return await RbacService().getAllRoles();
+  }
+
+  /// Update user's role permissions by fetching fresh role data
+  /// This is useful to ensure the user has the latest permissions
+  Future<bool> refreshUserRolePermissions() async {
+    try {
+      if (_currentUser == null || _currentUser!.roles == null) return false;
+
+      final rbacService = RbacService();
+      List<Role> updatedRoles = [];
+      
+      for (var role in _currentUser!.roles!) {
+        final freshRole = await rbacService.getRoleById(role.id);
+        if (freshRole != null) {
+          updatedRoles.add(freshRole);
+        } else {
+          // Keep the old role if fetch fails
+          updatedRoles.add(role);
+        }
+      }
+
+      // Update user with fresh roles
+      _currentUser = User(
+        id: _currentUser!.id,
+        name: _currentUser!.name,
+        email: _currentUser!.email,
+        emailVerifiedAt: _currentUser!.emailVerifiedAt,
+        approved: _currentUser!.approved,
+        roles: updatedRoles,
+        createdAt: _currentUser!.createdAt,
+        updatedAt: _currentUser!.updatedAt,
+        deletedAt: _currentUser!.deletedAt,
+      );
+
+      await _saveUserData(_currentUser!);
+      return true;
+    } catch (e) {
+      print('Error refreshing user role permissions: $e');
+      return false;
+    }
+  }
 }

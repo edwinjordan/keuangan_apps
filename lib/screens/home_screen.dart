@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../models/menu_item.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
+import '../services/rbac_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,6 +16,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final AuthService _authService = AuthService();
+  final RbacService _rbacService = RbacService();
+  bool _isRefreshingPermissions = false;
 
   // Define all available menu items with their permissions
   late final List<MenuItem> _allMenuItems;
@@ -27,25 +30,25 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icons.home,
         label: 'Home',
         route: '/home',
-        requiredPermissions: ['dashboard_access'],
+        requiredPermissions: ['home_view'], // From API: home_view permission
       ),
       MenuItem(
         icon: Icons.credit_card,
         label: 'Cards',
         route: '/cards',
-        requiredPermissions: ['view_cards'],
+        requiredPermissions: ['cards_view'], // From API: cards_view permission
       ),
       MenuItem(
         icon: Icons.account_balance_wallet,
         label: 'Wallet',
         route: '/wallet',
-        requiredPermissions: ['view_transactions'],
+        requiredPermissions: ['wallet_view'], // Wallet permissions
       ),
       MenuItem(
         icon: Icons.bar_chart,
         label: 'Stats',
         route: '/stats',
-        requiredPermissions: ['view_statistics'],
+        requiredPermissions: ['stats_view'], // Statistics permissions
       ),
       MenuItem(
         icon: Icons.person_outline,
@@ -54,6 +57,135 @@ class _HomeScreenState extends State<HomeScreen> {
         requiredPermissions: [], // Everyone can access profile
       ),
     ];
+    
+    // Refresh user permissions from RBAC service on init
+    _refreshUserPermissions();
+  }
+
+  /// Refresh user permissions from RBAC service
+  Future<void> _refreshUserPermissions() async {
+    setState(() => _isRefreshingPermissions = true);
+    
+    try {
+      final success = await _authService.refreshUserRolePermissions();
+      if (success && mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permissions refreshed successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error refreshing permissions: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to refresh permissions: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingPermissions = false);
+      }
+    }
+  }
+
+  /// Show role details from RBAC service
+  Future<void> _showRoleDetails(int roleId, String roleTitle) async {
+    try {
+      final role = await _rbacService.getRoleById(roleId);
+      
+      if (!mounted) return;
+      
+      if (role != null) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.admin_panel_settings, color: Color(0xFF6C63FF)),
+                const SizedBox(width: 8),
+                Text('Role: ${role.title}'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('ID: ${role.id}'),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Permissions:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (role.permissions != null && role.permissions!.isNotEmpty)
+                    ...role.permissions!.map((permission) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(permission.title)),
+                          Text(
+                            'ID: ${permission.id}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ))
+                  else
+                    const Text('No permissions assigned'),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Last updated from API',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to fetch role details'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // Get menu items that user has access to
@@ -129,6 +261,28 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             Row(
               children: [
+                // Refresh permissions button
+                IconButton(
+                  icon: _isRefreshingPermissions
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  color: const Color(0xFF6C63FF),
+                  onPressed: _isRefreshingPermissions ? null : _refreshUserPermissions,
+                  tooltip: 'Refresh Permissions',
+                ),
+                // RBAC Example Screen button
+                IconButton(
+                  icon: const Icon(Icons.admin_panel_settings),
+                  color: const Color(0xFF6C63FF),
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/rbac-example');
+                  },
+                  tooltip: 'RBAC Management',
+                ),
                 IconButton(
                   icon: Icon(Icons.search, color: Colors.grey[700]),
                   onPressed: () {},
@@ -140,6 +294,71 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ],
+        ),
+        const SizedBox(height: 24),
+
+        // User Permissions Overview
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.security, color: Color(0xFF6C63FF), size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Your Access Permissions',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: user.getAllPermissions().map((permission) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF6C63FF).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.check_circle,
+                          size: 14,
+                          color: Color(0xFF6C63FF),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          permission,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF6C63FF),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 24),
 
@@ -292,24 +511,232 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCardsContent(User user) {
-    return Center(
+    // Check user permissions for cards
+    final canView = _authService.hasPermission('cards_view');
+    final canEdit = _authService.hasPermission('cards_edit');
+    final canCreate = _authService.hasPermission('cards_create');
+    final canShow = _authService.hasPermission('cards_show');
+
+    return SingleChildScrollView(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.credit_card, size: 100, color: Colors.grey[300]),
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Cards',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              // Show create button only if user has cards_create permission
+              if (canCreate)
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Create new card')),
+                    );
+                  },
+                  color: const Color(0xFF6C63FF),
+                ),
+            ],
+          ),
           const SizedBox(height: 24),
-          Text(
-            'Cards Management',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
+
+          // Permission indicators
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your Card Permissions:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildPermissionRow('View Cards', canView),
+                _buildPermissionRow('Show Card Details', canShow),
+                _buildPermissionRow('Edit Cards', canEdit),
+                _buildPermissionRow('Create Cards', canCreate),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 24),
+
+          // Cards content based on permissions
+          if (canView) ...[
+            const Text(
+              'Your Cards',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildCardItem(
+              context,
+              cardType: 'Visa',
+              cardNumber: '•••• 4242',
+              balance: '\$2,450.00',
+              canEdit: canEdit,
+              canShow: canShow,
+            ),
+            const SizedBox(height: 12),
+            _buildCardItem(
+              context,
+              cardType: 'Mastercard',
+              cardNumber: '•••• 8888',
+              balance: '\$1,320.80',
+              canEdit: canEdit,
+              canShow: canShow,
+            ),
+          ] else ...[
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No permission to view cards',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionRow(String label, bool hasPermission) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            hasPermission ? Icons.check_circle : Icons.cancel,
+            size: 20,
+            color: hasPermission ? Colors.green : Colors.red,
+          ),
+          const SizedBox(width: 8),
           Text(
-            'View and manage your cards',
-            style: TextStyle(color: Colors.grey[500]),
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: hasPermission ? Colors.black87 : Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardItem(
+    BuildContext context, {
+    required String cardType,
+    required String cardNumber,
+    required String balance,
+    required bool canEdit,
+    required bool canShow,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6C63FF), Color(0xFF9D8CFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6C63FF).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                cardType,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Row(
+                children: [
+                  // Show details button - only if user has cards_show permission
+                  if (canShow)
+                    IconButton(
+                      icon: const Icon(Icons.visibility, color: Colors.white),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Show $cardType details')),
+                        );
+                      },
+                    ),
+                  // Edit button - only if user has cards_edit permission
+                  if (canEdit)
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Edit $cardType')),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            cardNumber,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9),
+              fontSize: 16,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Balance',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            balance,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -417,31 +844,70 @@ class _HomeScreenState extends State<HomeScreen> {
               if (user.roles != null && user.roles!.isNotEmpty) ...[
                 const Divider(),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Roles:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                const Text(
+                  'Roles:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...user.roles!.map((role) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () => _showRoleDetails(role.id, role.title),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6C63FF).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF6C63FF).withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.admin_panel_settings,
+                              color: Color(0xFF6C63FF),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    role.title,
+                                    style: const TextStyle(
+                                      color: Color(0xFF6C63FF),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${role.permissions?.length ?? 0} permissions',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              color: Color(0xFF6C63FF),
+                              size: 16,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    Wrap(
-                      spacing: 8,
-                      children: user.roles!.map((role) {
-                        return Chip(
-                          label: Text(role.title),
-                          backgroundColor: const Color(0xFF6C63FF).withOpacity(0.1),
-                          labelStyle: const TextStyle(
-                            color: Color(0xFF6C63FF),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
+                  );
+                }),
               ],
               const SizedBox(height: 24),
               ElevatedButton(
@@ -503,6 +969,12 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) {
           final accessibleItems = _getAccessibleMenuItems();
           
+          // BottomNavigationBar requires at least 2 items
+          // If user has less than 2 accessible items, don't show the bar
+          if (accessibleItems.length < 2) {
+            return const SizedBox.shrink();
+          }
+          
           // Ensure selected index is within bounds
           if (_selectedIndex >= accessibleItems.length) {
             _selectedIndex = 0;
@@ -527,12 +999,12 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-      floatingActionButton: _authService.hasPermission('create_transaction')
+      floatingActionButton: _authService.hasPermission('cards_create')
           ? FloatingActionButton(
               onPressed: () {
-                // Add transaction
+                // Add new card/transaction
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Add Transaction')),
+                  const SnackBar(content: Text('Create new card')),
                 );
               },
               backgroundColor: const Color(0xFF6C63FF),
